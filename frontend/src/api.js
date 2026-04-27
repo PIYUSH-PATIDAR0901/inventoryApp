@@ -19,8 +19,15 @@ async function request(path, options = {}) {
   return data;
 }
 
-export function listProducts(q) {
-  const qs = q ? `?q=${encodeURIComponent(q)}` : "";
+export function listProducts({ q = "", category = "" } = {}) {
+  const params = new URLSearchParams();
+  if (q.trim()) {
+    params.set("q", q.trim());
+  }
+  if (category.trim()) {
+    params.set("category", category.trim());
+  }
+  const qs = params.toString() ? `?${params.toString()}` : "";
   return request(`/api/products${qs}`);
 }
 

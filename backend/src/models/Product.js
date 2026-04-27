@@ -2,16 +2,47 @@ import mongoose from "mongoose";
 
 const productSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, trim: true },
-    sku: { type: String, required: true, unique: true, trim: true, uppercase: true },
-    quantity: { type: Number, required: true, min: 0 },
-    price: { type: Number, required: true, min: 0 },
-    category: { type: String, default: "", trim: true },
-    description: { type: String, default: "", trim: true },
+    name: {
+      type: String,
+      required: [true, "Product name is required"],
+      trim: true,
+      maxlength: [120, "Product name cannot exceed 120 characters"],
+    },
+    category: {
+      type: String,
+      required: [true, "Category is required"],
+      trim: true,
+      maxlength: [60, "Category cannot exceed 60 characters"],
+    },
+    price: {
+      type: Number,
+      required: [true, "Price is required"],
+      min: [0, "Price must be 0 or greater"],
+    },
+    quantity: {
+      type: Number,
+      required: [true, "Quantity is required"],
+      min: [0, "Quantity must be 0 or greater"],
+    },
+    description: {
+      type: String,
+      required: [true, "Description is required"],
+      trim: true,
+      maxlength: [2000, "Description cannot exceed 2000 characters"],
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
+    toJSON: {
+      transform: (_doc, ret) => {
+        ret.id = ret._id.toString();
+        delete ret.__v;
+        return ret;
+      },
+    },
+  }
 );
 
-productSchema.index({ name: "text", sku: "text", category: "text" });
+productSchema.index({ name: "text", category: "text", description: "text" });
 
 export const Product = mongoose.model("Product", productSchema);

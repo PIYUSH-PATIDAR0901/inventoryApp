@@ -6,12 +6,21 @@ import {
   deleteProduct,
 } from "./api";
 
+const CATEGORIES = [
+  "Electronics",
+  "Clothing",
+  "Home",
+  "Books",
+  "Beauty",
+  "Sports",
+  "Other",
+];
+
 const emptyForm = {
   name: "",
-  sku: "",
-  quantity: "",
-  price: "",
   category: "",
+  price: "",
+  quantity: "",
   description: "",
 };
 
@@ -21,9 +30,11 @@ export default function App() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
@@ -36,7 +47,7 @@ export default function App() {
     setLoading(true);
     setError("");
     try {
-      const data = await listProducts(debouncedSearch);
+      const data = await listProducts({ q: debouncedSearch, category: categoryFilter });
       setRows(Array.isArray(data) ? data : []);
     } catch (e) {
       setError(e.message || "Failed to load");
@@ -44,7 +55,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch]);
+  }, [debouncedSearch, categoryFilter]);
 
   useEffect(() => {
     load();
@@ -53,19 +64,20 @@ export default function App() {
   function openCreate() {
     setEditingId(null);
     setForm(emptyForm);
+    setFormErrors({});
     setModalOpen(true);
   }
 
   function openEdit(row) {
-    setEditingId(row._id);
+    setEditingId(row.id || row._id);
     setForm({
       name: row.name || "",
-      sku: row.sku || "",
-      quantity: String(row.quantity ?? ""),
-      price: String(row.price ?? ""),
       category: row.category || "",
+      price: String(row.price ?? ""),
+      quantity: String(row.quantity ?? ""),
       description: row.description || "",
     });
+    setFormErrors({});
     setModalOpen(true);
   }
 
@@ -76,14 +88,19 @@ export default function App() {
 
   async function onSubmit(e) {
     e.preventDefault();
+    const nextErrors = validateForm(form);
+    setFormErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
     setSaving(true);
     setError("");
     const payload = {
       name: form.name.trim(),
-      sku: form.sku.trim(),
-      quantity: Number(form.quantity),
-      price: Number(form.price),
       category: form.category.trim(),
+      price: Number(form.price),
+      quantity: Number(form.quantity),
       description: form.description.trim(),
     };
     try {
@@ -106,7 +123,7 @@ export default function App() {
     setSaving(true);
     setError("");
     try {
-      await deleteProduct(deleteTarget._id);
+      await deleteProduct(deleteTarget.id || deleteTarget._id);
       setDeleteTarget(null);
       await load();
     } catch (err) {
@@ -135,7 +152,7 @@ export default function App() {
               Product inventory
             </h1>
             <p className="text-sm text-slate-400">
-              Add, edit, remove stock. Search by name, SKU, or category.
+              Create, edit, search and manage products with category filtering.
             </p>
           </div>
           <button
@@ -150,20 +167,27 @@ export default function App() {
 
       <main className="mx-auto max-w-6xl px-4 py-6">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search…"
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 sm:max-w-md"
-          />
-          <button
-            type="button"
-            onClick={load}
-            className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800"
-          >
-            Refresh
-          </button>
+          <div className="flex w-full flex-col gap-3 sm:max-w-2xl sm:flex-row">
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by product name..."
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 sm:w-56"
+            >
+              <option value="">All categories</option>
+              {CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {error ? (
@@ -178,40 +202,36 @@ export default function App() {
               <thead className="bg-slate-900 text-xs uppercase text-slate-400">
                 <tr>
                   <th className="px-4 py-3 font-medium">Name</th>
-                  <th className="px-4 py-3 font-medium">SKU</th>
-                  <th className="px-4 py-3 font-medium">Qty</th>
-                  <th className="px-4 py-3 font-medium">Price</th>
                   <th className="px-4 py-3 font-medium">Category</th>
+                  <th className="px-4 py-3 font-medium">Price</th>
+                  <th className="px-4 py-3 font-medium">Quantity</th>
                   <th className="px-4 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
                       Loading…
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
                       No products yet. Create one to get started.
                     </td>
                   </tr>
                 ) : (
                   rows.map((p) => (
-                    <tr key={p._id} className="hover:bg-slate-800/50">
+                    <tr key={p.id || p._id} className="hover:bg-slate-800/50">
                       <td className="px-4 py-3 font-medium text-slate-100">
                         {p.name}
                       </td>
-                      <td className="px-4 py-3 text-slate-300">{p.sku}</td>
-                      <td className="px-4 py-3 text-slate-300">{p.quantity}</td>
+                      <td className="px-4 py-3 text-slate-300">{p.category}</td>
                       <td className="px-4 py-3 text-slate-300">
                         {currency.format(Number(p.price) || 0)}
                       </td>
-                      <td className="px-4 py-3 text-slate-300">
-                        {p.category || "—"}
-                      </td>
+                      <td className="px-4 py-3 text-slate-300">{p.quantity}</td>
                       <td className="px-4 py-3 text-right">
                         <button
                           type="button"
@@ -250,43 +270,41 @@ export default function App() {
             </h2>
             <form onSubmit={onSubmit} className="space-y-3">
               <div>
-                <label className="mb-1 block text-xs text-slate-400">Name</label>
+                <label className="mb-1 block text-xs text-slate-400">
+                  Product name
+                </label>
                 <input
-                  required
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Enter product name"
                   className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
+                {formErrors.name ? (
+                  <p className="mt-1 text-xs text-rose-400">{formErrors.name}</p>
+                ) : null}
               </div>
               <div>
-                <label className="mb-1 block text-xs text-slate-400">SKU</label>
-                <input
-                  required
-                  value={form.sku}
-                  onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))}
+                <label className="mb-1 block text-xs text-slate-400">Category</label>
+                <select
+                  value={form.category}
+                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
                   className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm uppercase focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
+                >
+                  <option value="">Select a category</option>
+                  {CATEGORIES.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+                {formErrors.category ? (
+                  <p className="mt-1 text-xs text-rose-400">{formErrors.category}</p>
+                ) : null}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs text-slate-400">
-                    Quantity
-                  </label>
-                  <input
-                    required
-                    min={0}
-                    type="number"
-                    value={form.quantity}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, quantity: e.target.value }))
-                    }
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-                <div>
                   <label className="mb-1 block text-xs text-slate-400">Price</label>
                   <input
-                    required
                     min={0}
                     step="0.01"
                     type="number"
@@ -296,17 +314,27 @@ export default function App() {
                     }
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
+                  {formErrors.price ? (
+                    <p className="mt-1 text-xs text-rose-400">{formErrors.price}</p>
+                  ) : null}
                 </div>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-slate-400">Category</label>
-                <input
-                  value={form.category}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, category: e.target.value }))
-                  }
-                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
+                <div>
+                  <label className="mb-1 block text-xs text-slate-400">
+                    Quantity
+                  </label>
+                  <input
+                    min={0}
+                    type="number"
+                    value={form.quantity}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, quantity: e.target.value }))
+                    }
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  {formErrors.quantity ? (
+                    <p className="mt-1 text-xs text-rose-400">{formErrors.quantity}</p>
+                  ) : null}
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-xs text-slate-400">
@@ -318,8 +346,14 @@ export default function App() {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, description: e.target.value }))
                   }
+                  placeholder="Write a short product description"
                   className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
+                {formErrors.description ? (
+                  <p className="mt-1 text-xs text-rose-400">
+                    {formErrors.description}
+                  </p>
+                ) : null}
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button
@@ -351,7 +385,7 @@ export default function App() {
               <span className="font-medium text-slate-200">
                 {deleteTarget.name}
               </span>{" "}
-              ({deleteTarget.sku}) permanently.
+              permanently.
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -375,4 +409,36 @@ export default function App() {
       ) : null}
     </div>
   );
+}
+
+function validateForm(form) {
+  const errors = {};
+
+  if (!form.name.trim()) {
+    errors.name = "Product name is required";
+  }
+
+  if (!form.category.trim()) {
+    errors.category = "Category is required";
+  }
+
+  const price = Number(form.price);
+  if (form.price === "" || Number.isNaN(price)) {
+    errors.price = "Price is required";
+  } else if (price < 0) {
+    errors.price = "Price cannot be negative";
+  }
+
+  const quantity = Number(form.quantity);
+  if (form.quantity === "" || Number.isNaN(quantity)) {
+    errors.quantity = "Quantity is required";
+  } else if (quantity < 0 || !Number.isInteger(quantity)) {
+    errors.quantity = "Quantity must be a whole number >= 0";
+  }
+
+  if (!form.description.trim()) {
+    errors.description = "Description is required";
+  }
+
+  return errors;
 }

@@ -5,16 +5,18 @@ export const productRouter = Router();
 
 productRouter.get("/", async (req, res, next) => {
   try {
-    const q = (req.query.q || "").toString().trim();
-    const filter = q
-      ? { $text: { $search: q } }
-      : {};
-    const sort = q ? { score: { $meta: "textScore" } } : { updatedAt: -1 };
-    const query = Product.find(filter);
+    const q = toCleanString(req.query.q);
+    const category = toCleanString(req.query.category);
+
+    const filter = {};
     if (q) {
-      query.select({ score: { $meta: "textScore" } });
+      filter.name = { $regex: escapeRegex(q), $options: "i" };
     }
-    const items = await query.sort(sort).lean();
+    if (category) {
+      filter.category = category;
+    }
+
+    const items = await Product.find(filter).sort({ created_at: -1 }).lean();
     res.json(items);
   } catch (e) {
     next(e);
@@ -39,9 +41,6 @@ productRouter.post("/", async (req, res, next) => {
     const doc = await Product.create(body);
     res.status(201).json(doc.toObject());
   } catch (e) {
-    if (e.code === 11000) {
-      return res.status(409).json({ message: "SKU already exists" });
-    }
     if (e.name === "ValidationError") {
       return res.status(400).json({ message: firstValidationMessage(e) });
     }
@@ -52,6 +51,12 @@ productRouter.post("/", async (req, res, next) => {
 productRouter.put("/:id", async (req, res, next) => {
   try {
     const body = normalizeBody(req.body, { partial: true });
+    if (Object.keys(body).length === 0) {
+      return res
+        .status(400)
+        .json({ message: "At least one product field is required to update" });
+    }
+
     const doc = await Product.findByIdAndUpdate(req.params.id, body, {
       new: true,
       runValidators: true,
@@ -61,9 +66,6 @@ productRouter.put("/:id", async (req, res, next) => {
     }
     res.json(doc);
   } catch (e) {
-    if (e.code === 11000) {
-      return res.status(409).json({ message: "SKU already exists" });
-    }
     if (e.name === "ValidationError") {
       return res.status(400).json({ message: firstValidationMessage(e) });
     }
@@ -84,9 +86,12 @@ productRouter.delete("/:id", async (req, res, next) => {
 });
 
 function normalizeBody(input, opts = {}) {
+  if (!input || typeof input !== "object") {
+    return {};
+  }
+
   const partial = Boolean(opts.partial);
   const name = input.name != null ? String(input.name).trim() : undefined;
-  const sku = input.sku != null ? String(input.sku).trim().toUpperCase() : undefined;
   const quantity =
     input.quantity !== undefined && input.quantity !== ""
       ? Number(input.quantity)
@@ -100,11 +105,10 @@ function normalizeBody(input, opts = {}) {
 
   const out = {};
   if (!partial || name !== undefined) out.name = name;
-  if (!partial || sku !== undefined) out.sku = sku;
-  if (!partial || quantity !== undefined) out.quantity = quantity;
+  if (!partial || category !== undefined) out.category = category;
   if (!partial || price !== undefined) out.price = price;
-  if (!partial || category !== undefined) out.category = category ?? "";
-  if (!partial || description !== undefined) out.description = description ?? "";
+  if (!partial || quantity !== undefined) out.quantity = quantity;
+  if (!partial || description !== undefined) out.description = description;
 
   return out;
 }
@@ -112,4 +116,15 @@ function normalizeBody(input, opts = {}) {
 function firstValidationMessage(err) {
   const first = Object.values(err.errors || {})[0];
   return first?.message || "Invalid data";
+}
+
+function toCleanString(value) {
+  if (value == null) {
+    return "";
+  }
+  return String(value).trim();
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
